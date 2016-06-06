@@ -1,44 +1,44 @@
 -- dr00l.lua
 
-misc = { }
+bitbang = { }
 
-function rprop(x)
+function bitbang.rprop(x)
     for i = 0, 5 do
         x = x | (x >> (1 << i))
     end
     return x
 end
 
-function pboot()
-    misc.PTAB = { }
+function bitbang.pboot()
+    bitbang.PTAB = { }
     for i = 0, 255 do
         local j, p = i, 0
         while (i ~= 0) do
             i = i & (i - 1)
             p = p + 1
         end
-        misc.PTAB[j] = p
+        bitbang.PTAB[j] = p
     end
 end
-pboot()
+bitbang.pboot()
 
-function pop(x)
+function bitbang.pop(x)
     assert(x >= 0)
     local p = 0
     while (x ~= 0) do
-        p = p + misc.PTAB[x & 0xff]
+        p = p + bitbang.PTAB[x & 0xff]
         x = x >> 8
     end
     return p
 end
 
-function cl2(x)
+function bitbang.cl2(x)
     assert(x > 0)
-    return pop(rprop(x - 1))
+    return bitbang.pop(bitbang.rprop(x - 1))
 end
 
 gf = { POLY = 0x11b }
-gf.HIGH = (rprop(gf.POLY) + 1) >> 1
+gf.HIGH = (bitbang.rprop(gf.POLY) + 1) >> 1
 
 function gf.mul0(x, y)
     prod = 0
@@ -86,7 +86,7 @@ function gf.div(x, y)
     return gf.E[(gf.L[x] + 255 - gf.L[y]) % 255]
 end
 
-function gf.fboot()
+function gf.boot()
     local x, g = 1, gf.mingen()
     for i = 0, 254 do
         gf.E[i] = x
@@ -102,9 +102,10 @@ function gf.fboot()
         end
     end
 end
-gf.fboot()
+gf.boot()
 
 aes = { }
+aes.__index = aes
 
 function aes.aesgfboot()
     aes.MUL2 = { }
@@ -151,9 +152,9 @@ aes.rounds     = 14
 aes.block_size = 16
 aes.key_size   = 32
 
-function aes.setkey(ctx, key)
+function aes:setkey(key)
     assert(#key == 32)
-    local xklen = (aes.rounds + 1) * aes.block_size
+    local xklen = (self.rounds + 1) * self.block_size
     local p, xk, w = 32, { }, { }
     for i = 0, 31 do
         xk[i] = key[i+1]
@@ -165,12 +166,12 @@ function aes.setkey(ctx, key)
     for i = 1, 10 do
         w[0], w[1], w[2], w[3] = w[1], w[2], w[3], w[0]
         for j = 0, 3 do
-            w[j] = aes.SBOX[w[j]]
+            w[j] = self.SBOX[w[j]]
         end
-        w[0] = w[0] ~ aes.RCON[i]
+        w[0] = w[0] ~ self.RCON[i]
         for z = 0, 3 do
             for j = 0, 3 do
-                w[j] = w[j] ~ xk[p - aes.key_size + j]
+                w[j] = w[j] ~ xk[p - self.key_size + j]
             end
             for j = 0, 3 do
                 xk[p] = w[j]
@@ -179,7 +180,7 @@ function aes.setkey(ctx, key)
         end
         if (p >= xklen) then break end
         for j = 0, 3 do
-            w[j] = aes.SBOX[w[j]] ~ xk[p - aes.key_size + j]
+            w[j] = self.SBOX[w[j]] ~ xk[p - self.key_size + j]
         end
         for j = 0, 3 do
             xk[p] = w[j]
@@ -187,7 +188,7 @@ function aes.setkey(ctx, key)
         end
         for z = 0, 2 do
             for j = 0, 3 do
-                w[j] = w[j] ~ xk[p - aes.key_size + j]
+                w[j] = w[j] ~ xk[p - self.key_size + j]
             end
             for j = 0, 3 do
                 xk[p] = w[j]
@@ -195,31 +196,31 @@ function aes.setkey(ctx, key)
             end
         end
     end
-    ctx.exkey = xk
+    self.exkey = xk
 end
 
-function aes.add_round_key(ctx, blk, round)
+function aes:add_round_key(blk, round)
     local ofs = round << 4
     for i = 0, 15 do
-        blk[i] = blk[i] ~ ctx.exkey[ofs + i]
+        blk[i] = blk[i] ~ self.exkey[ofs + i]
     end
 end
 
-function aes.sub_bytes(blk)
+function aes:sub_bytes(blk)
     for i = 0, 15 do
-        blk[i] = aes.SBOX[blk[i]]
+        blk[i] = self.SBOX[blk[i]]
     end
 end
 
-function aes.shift_rows(blk)
+function aes:shift_rows(blk)
     blk[1], blk[5], blk[ 9], blk[13] = blk[ 5], blk[ 9], blk[13], blk[ 1]
     blk[2], blk[6], blk[10], blk[14] = blk[10], blk[14], blk[ 2], blk[ 6]
     blk[3], blk[7], blk[11], blk[15] = blk[15], blk[ 3], blk[ 7], blk[11]
 end
 
-function aes.mix_columns(blk)
-    m2 = aes.MUL2
-    m3 = aes.MUL3
+function aes:mix_columns(blk)
+    m2 = self.MUL2
+    m3 = self.MUL3
     for col = 0, 15, 4 do
         v0         = blk[col]
         v1         = blk[col+1]
@@ -232,28 +233,33 @@ function aes.mix_columns(blk)
     end
 end
 
-function aes.encrypt(ctx, blk)
-    aes.add_round_key(ctx, blk, 0)
-    for round = 1, aes.rounds - 1 do
-        aes.sub_bytes(blk)
-        aes.shift_rows(blk)
-        aes.mix_columns(blk)
-        aes.add_round_key(ctx, blk, round)
+function aes:encrypt(blk)
+    self:add_round_key(blk, 0)
+    for round = 1, self.rounds - 1 do
+        self:sub_bytes(blk)
+        self:shift_rows(blk)
+        self:mix_columns(blk)
+        self:add_round_key(blk, round)
     end
-    aes.sub_bytes(blk)
-    aes.shift_rows(blk)
-    aes.add_round_key(ctx, blk, aes.rounds)
+    self:sub_bytes(blk)
+    self:shift_rows(blk)
+    self:add_round_key(blk, aes.rounds)
     return blk
 end
 
+function aes.new(key)
+    local self = setmetatable({ }, aes)
+    self:setkey(key)
+    return self
+end
+
 function aes.etest(k, p, x)
-    local ctx, blk = { }, { }
+    local ctx, blk = aes.new(k), { }
     assert(#k == 32)
     assert(#p == 16)
     assert(#x == 16)
     for i = 0, 15 do blk[i] = p[i+1] end
-    aes.setkey(ctx, k)
-    aes.encrypt(ctx, blk)
+    ctx:encrypt(blk)
     for i = 0, 15 do assert(blk[i] == x[i+1]) end
 end
 
@@ -311,4 +317,6 @@ function aes.test()
     --print("pass")
 end
 aes.test()
+
+
 
